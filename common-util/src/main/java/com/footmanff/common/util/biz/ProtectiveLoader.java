@@ -119,6 +119,7 @@ public class ProtectiveLoader<K, V> {
             try {
                 // 尝试从本地缓存取，如果本地缓存没有则调supplier计算，
                 // 这里相当于击穿了，但是此处的get方法有锁，很多超过maxWaitCount的线程，会在一把锁上等待
+                // 缓存有超时时间，当超时的时候需要去主动调一次supplier
                 V data = loadingCache.get(key, supplier::get);
 
                 // 如果计算得到了结果，去唤醒被阻塞的其他线程
