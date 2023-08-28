@@ -13,6 +13,7 @@
     <name>common-util</name>
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <elasticsearch.version>7.9.3</elasticsearch.version>
     </properties>
     <dependencies>
         <dependency>
