@@ -17,6 +17,11 @@ public class CompletableFutureUtilTest {
         for (int i = 0; i < 10; i++) {
             runnableList.add(() -> {
                 count.incrementAndGet();
+                try {
+                    Thread.sleep(400);
+                } catch (InterruptedException e) {
+                    throw new RuntimeException(e);
+                }
             });
         }
         completableFutureUtil.composed(runnableList).join();
