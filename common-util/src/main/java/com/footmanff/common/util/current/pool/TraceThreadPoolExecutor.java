@@ -6,11 +6,6 @@ import org.slf4j.MDC;
 import java.util.Map;
 import java.util.concurrent.*;
 
-/**
- * @author hao.bao
- * @version $Id: TraceThreadPoolExecutor.java, v0.1 2021-12-22 17:51:27 hao.bao Exp$
- */
-@SuppressWarnings("all")
 public class TraceThreadPoolExecutor extends ThreadPoolExecutor {
 
     public TraceThreadPoolExecutor(int corePoolSize, int maximumPoolSize, long keepAliveTime, TimeUnit unit, BlockingQueue<Runnable> workQueue) {
