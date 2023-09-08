@@ -13,9 +13,9 @@ import java.util.function.Supplier;
 @Slf4j
 public class CompletableFutureUtil {
 
-    private final static int DEFAULT_CORE_POOL_SIZE = 400;
+    private final static int DEFAULT_CORE_POOL_SIZE = 50;
 
-    private final static int DEFAULT_MAX_POOL_SIZE = 1024;
+    private final static int DEFAULT_MAX_POOL_SIZE = 50;
 
     private final static long DEFAULT_KEEP_ALIVE_TIME = 5L;
 
