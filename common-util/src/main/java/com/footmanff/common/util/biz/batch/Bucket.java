@@ -1,5 +1,7 @@
 package com.footmanff.common.util.biz.batch;
 
+import org.apache.commons.lang3.tuple.Pair;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -7,9 +9,9 @@ import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
 public class Bucket<T, R> {
-    
+
     private String id = UUID.randomUUID().toString();
-    
+
     private List<T> taskList = new ArrayList<>();
 
     private String key;
@@ -20,14 +22,14 @@ public class Bucket<T, R> {
 
     private Condition mainThreadCondition;
 
-    private boolean mainThreadSignal;
+    private volatile boolean mainThreadSignal;
 
-    private List<Condition> subThreadConditionList = new ArrayList<>();
+    private List<Pair<ReentrantLock, Condition>> subThreadConditionList = new ArrayList<>();
 
     private R result;
 
     private Throwable exp;
-    
+
     private boolean invalidated;
 
     public String getId() {
@@ -42,15 +44,15 @@ public class Bucket<T, R> {
         this.invalidated = invalidated;
     }
 
-    public void addTask(T task) {
+    public synchronized void addTask(T task) {
         taskList.add(task);
     }
 
-    public void addSubThreadCondition(Condition c) {
+    public synchronized void addSubThreadCondition(Pair<ReentrantLock, Condition> c) {
         subThreadConditionList.add(c);
     }
 
-    public List<Condition> getSubThreadConditionList() {
+    public synchronized List<Pair<ReentrantLock, Condition>> getSubThreadConditionList() {
         return subThreadConditionList;
     }
 
@@ -70,7 +72,7 @@ public class Bucket<T, R> {
         this.exp = exp;
     }
 
-    public List<T> getTaskList() {
+    public synchronized List<T> getTaskList() {
         return taskList;
     }
 

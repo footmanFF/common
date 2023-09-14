@@ -3,9 +3,8 @@ package com.footmanff.common.util.biz.batch;
 import com.footmanff.common.util.base.Holder;
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
+import org.apache.commons.lang3.tuple.Pair;
 
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
@@ -20,8 +19,6 @@ public class BatchExecutor<T, R> {
             .expireAfterWrite(4, TimeUnit.SECONDS)
             .build();
 
-    private final Map<String, Bucket<T, R>> bucketMap = new ConcurrentHashMap<>();
-    
     private AtomicLong lockCost = new AtomicLong();
 
     private AtomicLong signalCost = new AtomicLong();
@@ -56,50 +53,72 @@ public class BatchExecutor<T, R> {
 
         Result result = acquireAndLockBucket(key, cacheKey);
 
-        ReentrantLock lock = result.getBucket().getLock();
+        ReentrantLock lock = result.getLock();
         Condition condition = result.getCondition();
         Bucket<T, R> bucket = result.getBucket();
         boolean isMain = result.isMain();
 
         try {
-            if (!isMain) {
-                bucket.addSubThreadCondition(condition);
-            }
             bucket.addTask(param);
             if (isMain) {
                 // 第一个进入的key，仅等待一个时间窗口
                 try {
-                    condition.await(maxTime, TimeUnit.MILLISECONDS);
+                    // System.out.println("「主线程」开始沉睡");
+                    boolean timeout = condition.await(maxTime, TimeUnit.MILLISECONDS);
+                    if (timeout) {
+                        // System.out.println("超时");
+                    } else {
+                        // System.out.println("「主线程」被唤醒");
+                    }
                 } catch (InterruptedException e) {
                     throw new RuntimeException(e);
                 }
                 bucket.setMainThreadSignal(true);
                 loadingCache.invalidate(cacheKey);
                 bucket.setInvalidated(true);
-                // System.out.println("invalidate: " + cacheKey + " " + bucket.getId());
 
                 // 开始批处理
                 BatchExecParam<T> batchExecParam = new BatchExecParam<>(key, bucket.getTaskList(), cacheKey);
                 batchExecParam.setBucketId(bucket.getId());
                 BatchExecResult<R> batchExecResult = exec(bachFunc, batchExecParam);
                 setBucketResult(bucket, batchExecResult);
-                // System.out.println("setResult: " + cacheKey + " " + bucket.getId());
 
                 // 唤醒后续等待的线程
-                for (Condition subCondition : bucket.getSubThreadConditionList()) {
-                    long s = System.nanoTime();
-                    subCondition.signal();
-                    signalCost.addAndGet(System.nanoTime()  -s );
+                for (Pair<ReentrantLock, Condition> pair : bucket.getSubThreadConditionList()) {
+                    pair.getLeft().lock();
+                    try {
+                        pair.getRight().signal();
+                    } finally {
+                        pair.getLeft().unlock();
+                    }
                 }
                 return getResult(bucket);
             } else {
                 // 子线程超过一定数量，唤醒主线程
                 if (bucket.getTaskList().size() >= batchLimit && !bucket.isMainThreadSignal()) {
                     // 尝试提前唤醒主线程
-                    bucket.getMainThreadCondition().signal();
-                    bucket.setMainThreadSignal(true);
+                    while (true) {
+                        if (bucket.isMainThreadSignal()) {
+                            break;
+                        }
+                        boolean locked = bucket.getLock().tryLock();
+                        if (!locked) {
+                            continue;
+                        }
+                        try {
+                            bucket.getMainThreadCondition().signal();
+                        } catch (IllegalMonitorStateException e) {
+                            throw new RuntimeException(e);
+                        } finally {
+                            bucket.getLock().unlock();
+                        }
+                        bucket.setMainThreadSignal(true);
+                        break;
+                    }
+                    // System.out.println("唤醒主线程");
                     // System.out.println("超过batchLimit: " + bucket.getId());
                 }
+                bucket.addSubThreadCondition(Pair.of(lock, condition));
                 // 后续进入的key，等待第一个进入的线程唤醒
                 try {
                     long s = System.nanoTime();
@@ -123,7 +142,7 @@ public class BatchExecutor<T, R> {
             Bucket<T, R> bucket;
             try {
                 bucket = loadingCache.get(cacheKey, () -> {
-                    ReentrantLock lock = new ReentrantLock();
+                    ReentrantLock lock = new ReentrantLock(false);
                     Bucket<T, R> b = new Bucket<>();
                     b.setKey(key);
                     b.setCacheKey(cacheKey);
@@ -139,11 +158,13 @@ public class BatchExecutor<T, R> {
                 // System.out.println("重新acquire " + bucket.getId() + " " + Thread.currentThread().getName());
                 continue;
             }
-            ReentrantLock lock = bucket.getLock();
+            ReentrantLock lock;
             Condition condition;
             if (isMain.get()) {
+                lock = bucket.getLock();
                 condition = bucket.getMainThreadCondition();
             } else {
+                lock = new ReentrantLock(false);
                 condition = lock.newCondition();
             }
             long s = System.nanoTime();
@@ -159,6 +180,7 @@ public class BatchExecutor<T, R> {
             result.setBucket(bucket);
             result.setMain(isMain.get());
             result.setCondition(condition);
+            result.setLock(lock);
             return result;
         }
     }
@@ -192,6 +214,7 @@ public class BatchExecutor<T, R> {
         private Bucket<T, R> bucket;
         private boolean main;
         private Condition condition;
+        private ReentrantLock lock;
 
         public Bucket<T, R> getBucket() {
             return bucket;
@@ -217,6 +240,13 @@ public class BatchExecutor<T, R> {
             this.condition = condition;
         }
 
+        public ReentrantLock getLock() {
+            return lock;
+        }
+
+        public void setLock(ReentrantLock lock) {
+            this.lock = lock;
+        }
     }
 
 }

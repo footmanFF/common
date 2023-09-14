@@ -21,8 +21,8 @@ public class BatchExecutorTest {
 
         String key = "someKey";
 
-        int c = 40;
-        int execTotalLimit = 500;
+        int c = 80;
+        int execTotalLimit = 50000;
         long costPerExec = 10L;
         AtomicInteger execCount = new AtomicInteger();
         AtomicInteger totalTask = new AtomicInteger();
@@ -33,13 +33,16 @@ public class BatchExecutorTest {
 
         AtomicLong totalCost = new AtomicLong();
 
+        final AtomicLong normalCost = new AtomicLong();
+
         for (int i = 0; i < c; i++) {
             pool.submit(() -> {
                 try {
                     while (execCount.incrementAndGet() <= execTotalLimit) {
                         try {
                             long s = System.nanoTime();
-                            batchExecutor.execute(key, 1, 10L, 5, param -> {
+                            batchExecutor.execute(key, 1, 10L, 10, param -> {
+                                long fs = System.nanoTime();
                                 totalTask.addAndGet(param.getTaskList().size());
                                 batchExecCount.incrementAndGet();
                                 System.out.println("执行批量: " + param.getBucketId() + " size: " + param.getTaskList().size());
@@ -48,9 +51,9 @@ public class BatchExecutorTest {
                                 } catch (InterruptedException e) {
                                     throw new RuntimeException(e);
                                 }
+                                normalCost.addAndGet(System.nanoTime() - fs);
                                 return "success";
                             });
-                            // Thread.sleep(costPerExec);
                             totalCost.addAndGet(System.nanoTime() - s);
                         } catch (Exception e) {
                             e.printStackTrace();
@@ -69,9 +72,9 @@ public class BatchExecutorTest {
             });
         }
         countDownLatch.await();
-        long normalCost = execTotalLimit * costPerExec;
+        
 
-        System.out.println("最终 totalTask: " + totalTask.get() + " totalCall: " + totalCall.get() + " totalCost: " + totalCost.get() / 1000000L + "/" + normalCost + " batchExecCount: " + batchExecCount);
+        System.out.println("最终 totalTask: " + totalTask.get() + " totalCall: " + totalCall.get() + " totalCost: " + totalCost.get() / 1000000L + "/" + normalCost.get() / 1000000L + " batchExecCount: " + batchExecCount);
 
         System.out.println("lockCost: " + batchExecutor.getLockCost().get() / 1000000L);
 
