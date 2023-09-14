@@ -6,6 +6,7 @@ import lombok.Data;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
@@ -18,6 +19,10 @@ public class Bucket2<T, R> {
     private volatile ReentrantLock mainLock;
 
     private volatile Condition mainCondition;
+
+    private volatile ReentrantLock subLock;
+
+    private volatile Condition subCondition;
 
     private List<SubBucket> subBucketList;
 
@@ -37,6 +42,9 @@ public class Bucket2<T, R> {
         mainLock = new ReentrantLock();
         mainCondition = mainLock.newCondition();
         taskList = new ArrayList<>();
+
+        subLock = new ReentrantLock();
+        subCondition = subLock.newCondition();
     }
 
     /**
@@ -46,36 +54,54 @@ public class Bucket2<T, R> {
      *
      * @return false: bucket已经执行过批处理，已经不可用
      */
-    public synchronized boolean init(T task, ReentrantLock subLock, Condition subCondition) {
-        if (processed) {
-            return false;
+    public boolean init(T task, boolean isLastNum, boolean isMain) {
+        subLock.lock();
+        try {
+            if (processed) {
+                return false;
+            }
+            taskList.add(task);
+            if (!isMain) {
+                if (isLastNum) {
+                    mainLock.lock();
+                    try {
+                        mainCondition.signal();
+                    } finally {
+                        mainLock.unlock();
+                    }
+                }
+                try {
+                    subCondition.await();
+                } catch (InterruptedException e) {
+                    throw new RuntimeException(e);
+                }
+            }
+            return true;
+        } finally {
+            subLock.unlock();
         }
-        if (subLock != null) {
-            SubBucket subBucket = new SubBucket();
-            subBucket.setLock(subLock);
-            subBucket.setCondition(subCondition);
-
-            subBucketList.add(subBucket);
-        }
-        taskList.add(task);
-
-        return true;
     }
 
     /**
      * 加锁，避免批量处理的同时，还有其他线程在往List中加数据
      */
-    public synchronized void processTask(String key, Function<BatchExecParam<T>, R> bachFunc) {
-        processed = true;
+    public void processTask(String key, Function<BatchExecParam<T>, R> bachFunc) {
+        subLock.lock();
+        try {
+            processed = true;
 
-        BatchExecParam<T> batchExecParam = new BatchExecParam<>(key, taskList, null);
-        batchExecParam.setBucketId(id);
-        BatchExecResult<R> batchExecResult = exec(bachFunc, batchExecParam);
+            BatchExecParam<T> batchExecParam = new BatchExecParam<>(key, taskList, null);
+            batchExecParam.setBucketId(id);
+            BatchExecResult<R> batchExecResult = exec(bachFunc, batchExecParam);
 
-        if (batchExecResult.getResult() != null) {
-            this.result = batchExecResult.getResult();
-        } else {
-            this.exp = batchExecResult.getExp();
+            if (batchExecResult.getResult() != null) {
+                this.result = batchExecResult.getResult();
+            } else {
+                this.exp = batchExecResult.getExp();
+            }
+            subCondition.signalAll();
+        } finally {
+            subLock.unlock();
         }
     }
 

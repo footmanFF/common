@@ -1,5 +1,7 @@
 package com.footmanff.common.util.biz.batch;
 
+import lombok.Data;
+
 import java.util.List;
 
 public class BatchExecParam<T> {

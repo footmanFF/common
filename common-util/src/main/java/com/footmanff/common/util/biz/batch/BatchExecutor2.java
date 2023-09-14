@@ -25,9 +25,9 @@ public class BatchExecutor2<T, R> {
 
     private final int batchLimit;
 
-    private final int maxTime;
+    private final long maxTime;
 
-    public BatchExecutor2(int batchLimit, int maxTime) {
+    public BatchExecutor2(int batchLimit, long maxTime) {
         this.batchLimit = batchLimit;
         this.maxTime = maxTime;
     }
@@ -35,51 +35,21 @@ public class BatchExecutor2<T, R> {
     public R execute(String key, T task, Function<BatchExecParam<T>, R> bachFunc) {
         AcquireBucketResult<T, R> acquireBucketResult = acquireBucket(key, task);
         Bucket2<T, R> bucket2 = acquireBucketResult.getBucket2();
-        boolean isLastNum = acquireBucketResult.isLastNum();
-        ReentrantLock currentLock = acquireBucketResult.getCurrentLock();
         boolean isMain = acquireBucketResult.isMain();
-        Condition currentCondition = acquireBucketResult.getCurrentCondition();
 
         if (isMain) {
-            currentLock.lock();
             try {
-                currentCondition.await(maxTime, TimeUnit.MILLISECONDS);
+                bucket2.getMainCondition().await(maxTime, TimeUnit.MILLISECONDS);
             } catch (InterruptedException e) {
                 throw new RuntimeException(e);
             } finally {
-                currentLock.unlock();
+                bucket2.getMainLock().unlock();
             }
+
             // 开始批处理
             bucket2.processTask(key, bachFunc);
-
-            // 唤醒后续等待的线程
-            for (SubBucket subBucket : bucket2.getSubBucketList()) {
-                subBucket.getLock().lock();
-                try {
-                    subBucket.getCondition().signal();
-                } finally {
-                    subBucket.getLock().unlock();
-                }
-            }
-
             return getResult(bucket2);
         } else {
-            if (isLastNum) {
-                bucket2.getMainLock().lock();
-                try {
-                    bucket2.getMainCondition().signal();
-                } finally {
-                    bucket2.getMainLock().unlock();
-                }
-            }
-            currentLock.lock();
-            try {
-                currentCondition.await();
-            } catch (InterruptedException e) {
-                throw new RuntimeException(e);
-            } finally {
-                currentLock.unlock();
-            }
             // 被主线程唤醒，主线程完成了批处理，从bucket中拿结果返回
             return getResult(bucket2);
         }
@@ -115,7 +85,8 @@ public class BatchExecutor2<T, R> {
      * @return bucket获取结果
      */
     private AcquireBucketResult<T, R> acquireBucketInner(String key, T task) {
-        long timeWin = System.currentTimeMillis() / maxTime;
+        long time = System.currentTimeMillis();
+        long timeWin = time / maxTime;
         String seqKey = key + "_" + timeWin;
 
         AtomicLong seq = seqMap.computeIfAbsent(seqKey, k -> new AtomicLong());
@@ -127,29 +98,29 @@ public class BatchExecutor2<T, R> {
 
         String cacheKey = seqKey + "_" + batchNum;
 
-        Holder<Boolean> isMain = Holder.of(false);
+        Holder<Boolean> isMainHolder = Holder.of(false);
         Bucket2<T, R> bucket2;
         try {
             bucket2 = loadingCache.get(cacheKey, () -> {
                 Bucket2<T, R> b = new Bucket2<>();
-                isMain.set(Boolean.TRUE);
+                isMainHolder.set(Boolean.TRUE);
+                b.getMainLock().lock();
                 return b;
             });
         } catch (ExecutionException e) {
             throw new RuntimeException(e);
         }
-        ReentrantLock subLock = isMain.get() ? null : new ReentrantLock();
-        Condition subCondition = subLock == null ? null : subLock.newCondition();
-        boolean initSuccess = bucket2.init(task, subLock, subCondition);
+        boolean isMain = isMainHolder.get();
+        boolean initSuccess = bucket2.init(task, isLastNum, isMain);
 
         // 当前使用的锁，isMain代表首次进入的请求，非首次进入的请求都作为子锁
-        ReentrantLock currentLock = isMain.get() ? bucket2.getMainLock() : subLock;
-        Condition currentCondition = isMain.get() ? bucket2.getMainCondition() : subCondition;
+        ReentrantLock currentLock = isMainHolder.get() ? bucket2.getMainLock() : bucket2.getSubLock();
+        Condition currentCondition = isMainHolder.get() ? bucket2.getMainCondition() : bucket2.getSubCondition();
 
         AcquireBucketResult<T, R> result = new AcquireBucketResult<>();
         result.setBucket2(bucket2);
         result.setLastNum(isLastNum);
-        result.setMain(isMain.get());
+        result.setMain(isMain);
         result.setCurrentLock(currentLock);
         result.setCurrentCondition(currentCondition);
         result.setBucketInitSuccess(initSuccess);
