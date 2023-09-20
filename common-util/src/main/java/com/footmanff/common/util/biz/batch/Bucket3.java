@@ -6,7 +6,9 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 
 @Data
 public class Bucket3<T, R> {
-
+    
+    private String cacheKey;
+    
     private String id = UUID.randomUUID().toString();
     
     private volatile Thread mainThread;

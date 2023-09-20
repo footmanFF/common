@@ -10,6 +10,9 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.LockSupport;
 import java.util.function.Function;
 
+/**
+ * 合并扣库存
+ */
 public class BatchExecutor3<T, R> {
 
     private final Map<String, AtomicLong> seqMap = new ConcurrentHashMap<>();
@@ -44,6 +47,7 @@ public class BatchExecutor3<T, R> {
         Bucket3<T, R> bucket3 = cache2.compute(cacheKey, (k, v) -> {
             if (v == null) {
                 Bucket3<T, R> b = new Bucket3<>();
+                b.setCacheKey(cacheKey);
                 isMainHolder.set(Boolean.TRUE);
                 b.setMainThread(Thread.currentThread());
                 b.getTaskList().offer(task);
@@ -51,6 +55,7 @@ public class BatchExecutor3<T, R> {
             } else {
                 v.getSubThreadList().offer(Thread.currentThread());
                 v.getTaskList().offer(task);
+                System.out.println("offerTask " + cacheKey);
                 return v;
             }
         });
@@ -64,6 +69,7 @@ public class BatchExecutor3<T, R> {
             while ((t = bucket3.getTaskList().poll()) != null) {
                 taskList.add(t);
             }
+            System.out.println("pollTask " + cacheKey + " " + taskList.size());
 
             BatchExecParam<T> batchExecParam = new BatchExecParam<>(key, taskList, cacheKey);
             batchExecParam.setBucketId(bucket3.getId());
