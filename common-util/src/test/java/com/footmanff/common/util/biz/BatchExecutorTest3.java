@@ -42,16 +42,20 @@ public class BatchExecutorTest3 {
             }
         };
 
-        int c = 100;
+        int execPerThread = 100;
+        int c = 20;
         BatchExecutor<Integer, String> batchExecutor3 = new BatchExecutor<>(batchLimit, maxTime, bufferCount, bufferSize, thread, handler);
         CountDownLatch countDownLatch = new CountDownLatch(c);
 
         for (int i = 0; i < c; i++) {
             pool.submit(() -> {
                 try {
-                    long s = System.nanoTime();
-                    batchExecutor3.execute("someKey", 1);
-                    totalCost.addAndGet(System.nanoTime() - s);
+                    int a = 0;
+                    while (a++ <= execPerThread) {
+                        long s = System.nanoTime();
+                        batchExecutor3.execute("someKey", 1);
+                        totalCost.addAndGet(System.nanoTime() - s);
+                    }
                 } catch (Throwable t) {
                     t.printStackTrace();
                 } finally {

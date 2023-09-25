@@ -57,7 +57,7 @@ public class BatchExecutor<T, R> {
         innerTask.setCountableFutureTask(futureTask);
         innerTask.setTask(task);
 
-        boolean add = dataProducer.produce(key, innerTask);
+        boolean add = dataProducer.produce(key, innerTask, 10);
         if (!add) {
             throw new RuntimeException("add fail");
         }
