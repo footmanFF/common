@@ -1,10 +1,10 @@
 package com.footmanff.common.util.biz;
 
-import com.footmanff.common.util.biz.batch.BatchExecutor3;
 import com.footmanff.common.util.biz.batch2.BatchExecHandler;
 import com.footmanff.common.util.biz.batch2.BatchExecParam;
 import com.footmanff.common.util.biz.batch2.BatchExecutor;
 
+import java.math.BigDecimal;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.SynchronousQueue;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -51,10 +51,11 @@ public class BatchExecutorTest3 {
             pool.submit(() -> {
                 try {
                     int a = 0;
-                    while (a++ <= execPerThread) {
+                    while (a < execPerThread) {
                         long s = System.nanoTime();
                         batchExecutor3.execute("someKey", 1);
                         totalCost.addAndGet(System.nanoTime() - s);
+                        a++;
                     }
                 } catch (Throwable t) {
                     t.printStackTrace();
@@ -67,7 +68,9 @@ public class BatchExecutorTest3 {
         countDownLatch.await();
         System.out.println("正常结束");
 
-        System.out.println("最终 totalTask: " + totalTask.get() + " totalCall: " + totalCall.get() + " totalCost: " + totalCost.get() / 1000000L + "/" + normalCost.get() / 1000000L);
+        BigDecimal perCost = new BigDecimal(totalCost.get() / 1000000L).divide(BigDecimal.valueOf(execPerThread * c));
+
+        System.out.println("最终 totalTask: " + totalTask.get() + " totalCall: " + totalCall.get() + " totalCost: " + totalCost.get() / 1000000L + "/" + normalCost.get() / 1000000L + " perCost: " + perCost + "ms");
     }
 
 }
