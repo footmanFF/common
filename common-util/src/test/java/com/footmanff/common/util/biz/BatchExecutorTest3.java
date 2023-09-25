@@ -17,12 +17,11 @@ public class BatchExecutorTest3 {
     public static void main(String[] args) throws Exception {
         ThreadPoolExecutor pool = new ThreadPoolExecutor(400, 400, 120L, TimeUnit.SECONDS, new SynchronousQueue<>(), new ThreadPoolExecutor.CallerRunsPolicy());
 
-        AtomicInteger execCount = new AtomicInteger();
         AtomicInteger totalTask = new AtomicInteger();
         AtomicInteger totalCall = new AtomicInteger();
         AtomicLong totalCost = new AtomicLong();
         AtomicLong normalCost = new AtomicLong();
-        
+
         int batchLimit = 10;
         long maxTime = 25L;
         int bufferCount = 200;
@@ -43,7 +42,7 @@ public class BatchExecutorTest3 {
             }
         };
 
-        int c = 20000;
+        int c = 100;
         BatchExecutor<Integer, String> batchExecutor3 = new BatchExecutor<>(batchLimit, maxTime, bufferCount, bufferSize, thread, handler);
         CountDownLatch countDownLatch = new CountDownLatch(c);
 
@@ -51,7 +50,7 @@ public class BatchExecutorTest3 {
             pool.submit(() -> {
                 try {
                     long s = System.nanoTime();
-                    String r = batchExecutor3.execute("someKey", 1);
+                    batchExecutor3.execute("someKey", 1);
                     totalCost.addAndGet(System.nanoTime() - s);
                 } catch (Throwable t) {
                     t.printStackTrace();
